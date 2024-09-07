@@ -1,0 +1,6 @@
+venv
+.git
+.vscode
+.env
+db.sqlite3
+main.log
