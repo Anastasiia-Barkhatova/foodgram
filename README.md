@@ -29,11 +29,9 @@ git clone https://github.com/Anastasiia-Barkhatova/foodgram
 - POSTGRES_PASSWORD=<пароль_пользователя_базы_данных>
 - DB_HOST=db
 - DB_PORT=5432
-- SECRET_KEY='django-insecure-e68r(-kl9upv$tm)dmfm6644m#ye%c+vk(=+1965@605ec#8@u'
-- ALLOWED_HOSTS='158.160.76.66,127.0.0.1,localhost,mykittygram.zapto.org'
-- DEBUG='True'
 
-Перейти в репозиторию backend:
+
+Перейти в репозиторий backend:
 
 ```bash
 cd backend
@@ -44,8 +42,9 @@ Cоздать и активировать виртуальное окружен�
 ```bash
 python -m venv env
 ```
+
 ```bash
-    source env/scripts/activate
+source env/scripts/activate
 ```
 
 Обновить pip:
@@ -72,59 +71,48 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-### **Запуск frontend проекта**
 
-Перейти в репозиторий infra:
+### **Запуск проекта в контейнерах локально**
 
-```bash
-cd frontend
-```
-
-Установить зависимости:
+В корневой директории проекта запустить файл docker-compose.production.yml:
 
 ```bash
-npm i
+docker compose -f docker-compose.production.yml up
 ```
-
-Запустить проект:
+Собрать статику:
 
 ```bash
-npm run start
+docker compose exec backend python manage.py collectstatic
+docker compose exec backend cp -r /app/collected_static/. /backend_static/static/
 ```
 
-### **Запуск проекта в контейнерах**
-
-Собрать образы foodgram_frontend, foodgram_backend и foodgram_gateway:
+Выполнить миграции:
 
 ```bash
-cd frontend
-docker build -t username/foodgram_frontend
+docker-compose exec backend python manage.py makemigrations
+docker-compose exec backend python manage.py migrate
 ```
+
+Добавить ингредиенты в базу данных:
+
+- посмотреть имя контейнера
 
 ```bash
-cd backend
-docker build -t username/foodgram_backend
+docker ps
 ```
+
+- перейти в Git Bash
 
 ```bash
-cd nginx
-docker build -t username/foodgram_gateway
+docker exec -it <имя_контейнера> bash
 ```
-- необходимо заменить username на свой логин на DockerHub.
 
-Загрузить образы на DockerHub:
+- находясь в папке app запустить команду:
 
 ```bash
-docker push username/foodgram_frontend
-docker push username/foodgram_backend
-docker push username/foodgram_gateway
+python manage.py import_ingredients_csv
 ```
 
-Запустить проект из корневой папки проекта - foodgram:
-
-```bash
-docker-compose up --build
-```
 
 ### **Запуск проекта на удаленном сервере**
 
