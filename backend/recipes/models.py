@@ -1,7 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.core.validators import RegexValidator
-from django.urls import reverse
 
 from recipes.constants import (
     INGREDIENT_NAME_LENGHT,
