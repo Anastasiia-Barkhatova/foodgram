@@ -1,5 +1,5 @@
 
-
+[![Main Foodgram workflow](https://github.com/Anastasiia-Barkhatova/foodgram_final/actions/workflows/main.yml/badge.svg)](https://github.com/Anastasiia-Barkhatova/foodgram_final/actions/workflows/main.yml)
 
 ### **Описание проекта Foodgram**
 
