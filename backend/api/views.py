@@ -26,8 +26,7 @@ from api.pagination import LimitedPagination
 from api.permissions import (
     AdminOrReadOnly,
     IsAdminOrAuthor,
-    IsAuthorOrAdminOrReadOnly,
-    IsSelfOrAdminOrReadOnly
+    IsAuthorOrAdminOrReadOnly
 )
 from api.serializers import (
     FavoriteSerializer,
@@ -89,14 +88,14 @@ class RecipeViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
-    def handle_favorite_shoppingcart(
+    def handle_favorite_shopping_cart(
             self, request, pk, model_class, serializer_class
     ):
         user = request.user
         recipe = get_object_or_404(Recipe, id=pk)
         object_data = model_class.objects.filter(user=user, recipe=recipe)
         if request.method == 'POST':
-            if object_data:
+            if object_data.exists():
                 return Response(
                     'Вы уже добавили этот рецепт',
                     status=status.HTTP_400_BAD_REQUEST
@@ -106,7 +105,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
                 obj, context={'request': request}
             )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        if not object_data:
+        if not object_data.exists():
             return Response(
                 {'errors': 'Вы не добавляли этот рецепт'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -122,8 +121,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
         methods=('post', 'delete'),
         url_path='favorite',
     )
-    def get_favorite(self, request, pk=None):
-        return self.handle_favorite_shoppingcart(
+    def get_delete_favorite(self, request, pk=None):
+        return self.handle_favorite_shopping_cart(
             request, pk, Favorite, FavoriteSerializer
         )
 
@@ -171,7 +170,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
         url_path='shopping_cart',
     )
     def shopping_list(self, request, pk=None):
-        return self.handle_favorite_shoppingcart(
+        return self.handle_favorite_shopping_cart(
             request, pk, ShoppingList, ShoppingListSerializer
         )
 
@@ -196,7 +195,7 @@ class RedirectView(View):
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('-date_joined')
-    permission_classes = (IsSelfOrAdminOrReadOnly, )
+    permission_classes = (IsAuthorOrAdminOrReadOnly, )
     pagination_class = LimitedPagination
 
     def get_serializer_class(self):
@@ -280,15 +279,11 @@ class UserViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             serializer = SubscribeSerializer(
-                author, data=request.data,
-                context={'request': request}
+                data={},
+                context={'request': request, 'author': author, 'user': user}
             )
             serializer.is_valid(raise_exception=True)
-            Subscription.objects.create(user=user, author=author)
-            # serializer.save() - здесь не совсем поняла,
-            # как применить serializer.save(),
-            # так как в этом случае у меня не создается
-            # экземпляр модели Subscription
+            serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         if not subscriptions.exists():
             return Response(

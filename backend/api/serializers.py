@@ -84,7 +84,8 @@ class ShortRecipeListSerializer(serializers.ModelSerializer):
         )
 
 
-class SubscriptionSerializer(UserReadSerializer):
+class SubscriptionSerializer(serializers.ModelSerializer):
+    is_subscribed = serializers.SerializerMethodField()
     recipes = serializers.SerializerMethodField()
     recipes_count = serializers.SerializerMethodField()
 
@@ -117,6 +118,10 @@ class SubscriptionSerializer(UserReadSerializer):
     def get_recipes_count(self, obj):
         return Recipe.objects.filter(author=obj).count()
 
+    def get_is_subscribed(self, obj):
+        user = self.context['request'].user
+        return Subscription.objects.filter(user=user, author=obj).exists()
+
 
 class SubscribeSerializer(serializers.ModelSerializer):
     user = serializers.SlugRelatedField(
@@ -126,18 +131,28 @@ class SubscribeSerializer(serializers.ModelSerializer):
     )
     author = serializers.SlugRelatedField(
         slug_field='username',
-        queryset=User.objects.all(),
-        default=serializers.CurrentUserDefault()
+        read_only=True,
     )
 
     class Meta:
         model = Subscription
         fields = ('user', 'author',)
 
+    def create(self, validated_data):
+        user = self.context['user']
+        author = self.context['author']
+        subscription, created = Subscription.objects.get_or_create(
+            user=user,
+            author=author
+        )
+        if not created:
+            raise serializers.ValidationError('Подписка уже существует')
+        return subscription
+
     def to_representation(self, instance):
         request = self.context.get('request')
         return SubscriptionSerializer(
-            instance,
+            instance.author,
             context={'request': request}
         ).data
 
