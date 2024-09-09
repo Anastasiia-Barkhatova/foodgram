@@ -1,5 +1,7 @@
+from django.contrib.auth.hashers import make_password
 from rest_framework import serializers
 
+from api.fields import Base64ImageField
 from recipes.models import (
     Favorite,
     Ingredient,
@@ -8,7 +10,136 @@ from recipes.models import (
     ShoppingList,
     Tag
 )
-from users.serializers import Base64ImageField, UserReadSerializer
+from users.models import Subscription, User
+
+
+class UserAvatarSerializer(serializers.ModelSerializer):
+    avatar = Base64ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = User
+        fields = ('avatar',)
+
+
+class UserReadSerializer(serializers.ModelSerializer):
+    is_subscribed = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            'email',
+            'id',
+            'username',
+            'first_name',
+            'last_name',
+            'is_subscribed',
+            'avatar',
+        )
+
+    def get_is_subscribed(self, obj):
+        user = self.context.get('request').user
+        if user.is_anonymous:
+            return False
+        return Subscription.objects.filter(user=user, author=obj).exists()
+
+
+class UserWriteSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = (
+            'email',
+            'username',
+            'first_name',
+            'last_name',
+            'password'
+        )
+
+    def create(self, validated_data):
+        user = User(
+            email=validated_data['email'],
+            username=validated_data['username'],
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name']
+        )
+        user.set_password(validated_data['password'])
+        user.save()
+        return user
+
+    def perform_update(self, serializer):
+        if 'password' in self.request.data:
+            password = make_password(self.request.data['password'])
+            serializer.save(password=password)
+        else:
+            serializer.save()
+
+
+class ShortRecipeListSerializer(serializers.ModelSerializer):
+    image = Base64ImageField()
+
+    class Meta:
+        model = Recipe
+        fields = (
+            'id', 'name', 'image', 'cooking_time',
+        )
+
+
+class SubscriptionSerializer(UserReadSerializer):
+    recipes = serializers.SerializerMethodField()
+    recipes_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            'email',
+            'id',
+            'username',
+            'first_name',
+            'last_name',
+            'is_subscribed',
+            'recipes',
+            'recipes_count',
+            'avatar'
+        )
+
+    def get_recipes(self, obj):
+        request = self.context.get('request')
+        recipes_limit = request.query_params.get('recipes_limit')
+        recipes = Recipe.objects.filter(author=obj)
+        if recipes_limit:
+            recipes = recipes[:int(recipes_limit)]
+        return ShortRecipeListSerializer(
+            recipes,
+            many=True,
+            read_only=True
+        ).data
+
+    def get_recipes_count(self, obj):
+        return Recipe.objects.filter(author=obj).count()
+
+
+class SubscribeSerializer(serializers.ModelSerializer):
+    user = serializers.SlugRelatedField(
+        slug_field='username',
+        default=serializers.CurrentUserDefault(),
+        read_only=True,
+    )
+    author = serializers.SlugRelatedField(
+        slug_field='username',
+        queryset=User.objects.all(),
+        default=serializers.CurrentUserDefault()
+    )
+
+    class Meta:
+        model = Subscription
+        fields = ('user', 'author',)
+
+    def to_representation(self, instance):
+        request = self.context.get('request')
+        return SubscriptionSerializer(
+            instance,
+            context={'request': request}
+        ).data
 
 
 class TagSerializer(serializers.ModelSerializer):
@@ -103,43 +234,67 @@ class RecipeWriteSerializer(RecipeReadSerializer):
         ).data
         return recipe_data
 
+    def create_update_ingredients(self, recipe, ingredients):
+        recipe_ingredients = [
+            RecipeIngredient(
+                recipe=recipe,
+                ingredient=ingredient['id'],
+                amount=ingredient['amount'])
+            for ingredient in ingredients
+        ]
+        RecipeIngredient.objects.bulk_create(recipe_ingredients)
+
     def create(self, validated_data):
         ingredients = validated_data.pop('ingredients')
         tags = validated_data.pop('tags')
         recipe = Recipe.objects.create(**validated_data)
-        for ingredient in ingredients:
-            RecipeIngredient.objects.update_or_create(
-                recipe=recipe,
-                ingredient=ingredient['id'],
-                defaults={'amount': ingredient['amount']})
+        self.create_update_ingredients(recipe, ingredients)
         recipe.tags.set(tags)
         return recipe
 
     def update(self, instance, validated_data):
-        instance.name = validated_data.get('name', instance.name)
-        instance.image = validated_data.get('image', instance.image)
-        instance.text = validated_data.get('text', instance.text)
-        instance.cooking_time = validated_data.get(
-            'cooking_time',
-            instance.cooking_time
-        )
-        if 'ingredients' in validated_data:
-            ingredients_data = validated_data.pop('ingredients')
+        ingredients = validated_data.pop('ingredients', None)
+        tags = validated_data.pop('tags', None)
+        instance = super().update(instance, validated_data)
+        if ingredients is not None:
             RecipeIngredient.objects.filter(recipe=instance).delete()
-            for ingredient_data in ingredients_data:
-                RecipeIngredient.objects.create(
-                    recipe=instance,
-                    ingredient=ingredient_data['id'],
-                    amount=ingredient_data['amount']
-                )
-        if 'tags' in validated_data:
-            tags_data = validated_data.pop('tags')
-            instance.tags.set(tags_data)
+            self.create_update_ingredients(
+                recipe=instance,
+                ingredients=ingredients
+            )
+        if tags is not None:
+            instance.tags.set(tags)
         instance.save()
         return instance
 
+    @staticmethod
+    def validate_ingredients(value):
+        if not value:
+            raise serializers.ValidationError(
+                'Добавьте как минимум один ингредиент'
+            )
+        ingredients = []
+        for item in value:
+            ingredient = item['id']
+            if ingredient in ingredients:
+                raise serializers.ValidationError(
+                    'Вы добавили один и тот же ингредиент несколько раз'
+                )
+            ingredients.append(ingredient)
+        return value
 
-class BaseFavoriteShoppingLintSerializer(serializers.ModelSerializer):
+    @staticmethod
+    def validate_tags(value):
+        if not value:
+            raise serializers.ValidationError('Добавьте как минимум один тег')
+        if len(value) > len(set(value)):
+            raise serializers.ValidationError(
+                'Вы добавили один и тот же тег несколько раз'
+            )
+        return value
+
+
+class BaseFavoriteShoppingListSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(source='recipe.id', read_only=True)
     name = serializers.CharField(source='recipe.name', read_only=True)
     image = serializers.ImageField(source='recipe.image', read_only=True)
@@ -153,15 +308,15 @@ class BaseFavoriteShoppingLintSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'image', 'cooking_time')
 
 
-class ShoppingListSerializer(BaseFavoriteShoppingLintSerializer):
+class ShoppingListSerializer(BaseFavoriteShoppingListSerializer):
 
     class Meta:
         model = ShoppingList
-        fields = BaseFavoriteShoppingLintSerializer.Meta.fields
+        fields = BaseFavoriteShoppingListSerializer.Meta.fields
 
 
-class FavoriteSerializer(BaseFavoriteShoppingLintSerializer):
+class FavoriteSerializer(BaseFavoriteShoppingListSerializer):
 
     class Meta:
         model = Favorite
-        fields = BaseFavoriteShoppingLintSerializer.Meta.fields
+        fields = BaseFavoriteShoppingListSerializer.Meta.fields

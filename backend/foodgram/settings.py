@@ -13,6 +13,8 @@ SECRET_KEY = os.getenv('SECRET_KEY', get_random_secret_key())
 
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
+DEBUG = True
+
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', default='127.0.0.1, localhost').split(',')
 
 INSTALLED_APPS = [
@@ -131,9 +133,9 @@ REST_FRAMEWORK = {
 DJOSER = {
     'LOGIN_FIELD': 'email',
     'SERIALIZERS': {
-        'user': "users.serializers.UserReadSerializer",
-        'user_create': 'users.serializers.UserWriteSerializer',
-        'current_user': "users.serializers.UserReadSerializer",
+        'user': "api.serializers.UserReadSerializer",
+        'user_create': 'api.serializers.UserWriteSerializer',
+        'current_user': "api.serializers.UserReadSerializer",
     },
     'PERMISSIONS': {
         'activation': ['rest_framework.permissions.IsAdminUser'],
