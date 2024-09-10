@@ -261,6 +261,7 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=('post', 'delete'),
+        url_path='subscribe',
         permission_classes=(IsAuthenticated,),
     )
     def subscribe(self, request, pk=None):
