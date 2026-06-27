@@ -29,7 +29,7 @@ python-dotenv==1.2.2
 python3-openid==3.2.0
 pytz==2024.1
 reportlab==4.2.2
-requests==2.32.3
+requests==2.33.0
 requests-oauthlib==2.0.0
 shortuuid==1.0.13
 six==1.16.0
